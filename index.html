@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://unpkg.com/easy-file-saver@0.2.0/easy-file-saver.js"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.js"></script>
+    <style>
+      body {
+        background-color: #0093E9;
+        background-image: linear-gradient(160deg, #0093E9 0%, #80D0C7 100%);
+        height: 100vh;
+        padding: 30px;
+      }
+      #left {
+        background: whitesmoke; 
+        border-radius: 30px;
+        padding: 30px;
+        width: calc(75% - 60px);
+      }
+      #preview {
+        width: calc(50% - 60px);
+      }
+
+      .row {
+        background: lightgrey;
+        box-sizing: border-box;
+        display: block;
+        margin: 5px;
+        padding: 5px;
+        width: 100%;
+        width: calc(100% - 10px);
+      }
+
+      .filename {
+        display: inline-block;
+        font-family: sans-serif;
+        font-size: 20pt;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        vertical-align: middle;
+      }
+
+      .cell {
+        padding: 5px;
+      }
+      
+      .delete {
+        color: red;
+        cursor: pointer;
+        display: inline-block;
+        font-family: sans-serif;
+        font-weight: bold;
+        font-size: 20pt;
+        margin: 10px;
+        vertical-align: middle;
+      }
+      .delete:hover {
+        color: black;
+      }
+
+      .add-file-wrapper {
+        
+      }
+
+      #add-file-button {
+        border: 1px solid black;
+        cursor: pointer;
+        display: block;
+        font-size: 25px;
+        font-weight: bold;
+        padding: 15px;
+        text-align: center;
+      }
+
+      #add-file-button:hover {
+        background: black;
+        color: whitesmoke;
+      }
+
+      #add-file-input {
+        display: none;
+      }
+
+      #save-file-wrapper {
+        margin-top: 20px;
+        width: 100%;
+      }
+
+      #save-file-button {
+        border: 1px solid black;
+        cursor: pointer;
+        display: block;
+        font-size: 25px;
+        font-weight: bold;
+        padding: 15px;
+        text-align: center;
+        width: 100%;
+      }
+
+      #save-file-button:hover {
+        background: black;
+        color: whitesmoke;
+      }
+    </style>
+    <script>
+      window.app = {
+        state: {
+          // each file is { page data }
+          files: [],
+          pdf: null
+        }
+      };
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <h1>Combine Application Files</h1>
+      <div id="left">
+        <div id="add">
+          <div>
+            <h2>Files</h2>
+            <div id="files-wrapper">
+              <div id="files">
+              </div>
+            </div>
+          </div>
+          <div id="add-file-wrapper">
+            <label id="add-file-button" for="add-file-input">Add File(s)</label>
+            <input id="add-file-input" type="file" multiple="multiple">  
+          </div>
+          <div id="save-file-wrapper">
+            <button id="save-file-button">Save File</label>
+          </div>
+        </div>
+      </div>
+      <!-- <div id="preview">
+        <div id="export-wrapper">
+          
+        </div>
+        <button id="save">Save</button>
+      </div> -->
+    </div>
+    <script>
+      document.getElementById("add-file-input").addEventListener("change", function (evt) {
+        console.log(evt);
+        const files = evt.target.files;
+        console.log("files:", files);
+        for (let f = 0; f < files.length; f++) {
+          const file = files[f];
+          if (files.length === 0) return;
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            console.log({e});
+            const ab = e.target.result;
+            // add to list of files
+            PDFLib.PDFDocument.load(ab).then(function (doc) {
+              console.log("doc:", doc);
+              app.state.files.push({
+                doc: doc,
+                name: file.name 
+              });
+
+              // re-run render cycle updating list and display
+              render();
+
+              // clear file input
+              evt.target.value = null;
+            });
+          };
+          reader.readAsArrayBuffer(file);
+        }
+      });
+
+      document.getElementById("save-file-button").addEventListener("click", function (evt) {
+        app.state.combined.save().then(function (pdfBytes) {
+          console.log("pdfBytes:", pdfBytes);
+          saveFile({ data: pdfBytes, debug: true, filename: "Combined Application.pdf" });
+        });
+      });
+
+      function render_list() {
+        const container = document.getElementById("files-wrapper");
+        const inner = document.createElement("div");
+        container.innerHTML = ""; // clear
+        app.state.files.forEach(function (file) {
+          const row = document.createElement("div");
+          row.className = "row";
+
+          const div_delete = document.createElement("div");
+          div_delete.className = "delete";
+          div_delete.textContent = "X";
+          div_delete.addEventListener("click", function() {
+            app.state.files = app.state.files.filter(function (it) {
+              return it !== file;
+            });
+            render();
+          });
+          row.appendChild(div_delete);
+
+          const div_filename = document.createElement("div");
+          div_filename.className = "filename";
+          div_filename.textContent = file.name;
+          row.appendChild(div_filename);
+
+          inner.appendChild(row);
+        });
+        container.appendChild(inner);
+      }
+
+      function copyAllPages(src, dst) {
+        return dst.copyPages(src, src.getPageIndices()).then(function (copied_pages) {
+          copied_pages.forEach(function (page) {
+            dst.addPage(page);
+          });
+        });   
+      }
+
+      function combine_pdfs () {
+        return new Promise(function(resolve, reject) {
+          PDFLib.PDFDocument.create().then(function (doc) {
+            Promise.all(app.state.files.map(function (file) {
+              return copyAllPages(file.doc, doc);
+            })).then(function () {
+              resolve(doc);
+            });
+          });
+        });
+      }
+
+      function render_preview() {
+        combine_pdfs().then(function (combined) {
+          console.log("combined:", combined);
+          app.state.combined = combined;
+          console.log("combined page count:", combined.getPageCount());
+        });
+      }
+
+      function render() {
+        render_list();
+        render_preview();
+      }
+    </script>
+  </body>
+</html>
