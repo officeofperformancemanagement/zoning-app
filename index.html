@@ -141,34 +141,53 @@
       </div> -->
     </div>
     <script>
+      function load_file (file) {
+        return new Promise(function (resolve, reject) {
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            const arrayBuffer = e.target.result;
+            PDFLib.PDFDocument.load(arrayBuffer).then(function (pdf) {
+              console.log("loading pdf", pdf);
+              resolve({ name: file.name, pdf: pdf });
+            }).catch(function (error) {
+              alert(error);
+              resolve(null);
+            })
+          };
+          reader.readAsArrayBuffer(file);
+        });
+      }
+
+      function load_files (fileList) {
+        const promises = [];
+        for (let f = 0; f < fileList.length; f++) {
+          const file = fileList[f];
+          promises.push(load_file(file));
+        }
+        return Promise.all(promises);
+      }
+
       document.getElementById("add-file-input").addEventListener("change", function (evt) {
         console.log(evt);
         const files = evt.target.files;
         console.log("files:", files);
-        for (let f = 0; f < files.length; f++) {
-          const file = files[f];
-          if (files.length === 0) return;
-          const reader = new FileReader();
-          reader.onload = function (e) {
-            console.log({e});
-            const ab = e.target.result;
-            // add to list of files
-            PDFLib.PDFDocument.load(ab).then(function (doc) {
-              console.log("doc:", doc);
+        load_files(files).then(function (docs) {
+          console.log("doc:", docs);
+          docs.forEach(function (doc) {
+            if (doc) {
               app.state.files.push({
-                doc: doc,
-                name: file.name 
+                doc: doc.pdf,
+                name: doc.name 
               });
+            }
+          });
 
-              // re-run render cycle updating list and display
-              render();
+          // clear file input
+          evt.target.value = null;
 
-              // clear file input
-              evt.target.value = null;
-            });
-          };
-          reader.readAsArrayBuffer(file);
-        }
+          // re-run render cycle updating list and display
+          render();
+        });
       });
 
       document.getElementById("save-file-button").addEventListener("click", function (evt) {
@@ -217,12 +236,16 @@
 
       function combine_pdfs () {
         return new Promise(function(resolve, reject) {
-          PDFLib.PDFDocument.create().then(function (doc) {
+          PDFLib.PDFDocument.create()
+          .then(function (doc) {
             Promise.all(app.state.files.map(function (file) {
               return copyAllPages(file.doc, doc);
             })).then(function () {
               resolve(doc);
             });
+          })
+          .catch(function (error) {
+            alert(error);
           });
         });
       }
